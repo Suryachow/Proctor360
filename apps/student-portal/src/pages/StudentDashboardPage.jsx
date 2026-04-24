@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api } from "../services/api";
 
 function UiIcon({ name }) {
@@ -10,441 +10,348 @@ function UiIcon({ name }) {
     strokeWidth: "1.8",
     strokeLinecap: "round",
     strokeLinejoin: "round",
+    width: "18px",
+    height: "18px",
     "aria-hidden": "true",
   };
 
-  if (name === "refresh") {
-    return (
-      <svg {...common}>
-        <path d="M21 12a9 9 0 1 1-2.6-6.4" />
-        <path d="M21 4v6h-6" />
-      </svg>
-    );
-  }
-  if (name === "download") {
-    return (
-      <svg {...common}>
-        <path d="M12 3v12" />
-        <path d="M8 11l4 4 4-4" />
-        <path d="M4 20h16" />
-      </svg>
-    );
-  }
-  if (name === "logout") {
-    return (
-      <svg {...common}>
-        <path d="M10 17l-5-5 5-5" />
-        <path d="M5 12h10" />
-        <path d="M14 4h5v16h-5" />
-      </svg>
-    );
-  }
-  if (name === "start") {
-    return (
-      <svg {...common}>
-        <path d="M8 5l11 7-11 7z" />
-      </svg>
-    );
-  }
-  if (name === "overview") {
-    return (
-      <svg {...common}>
-        <rect x="4" y="4" width="16" height="16" rx="3" />
-        <path d="M8 15l2.5-3 2.5 2 3-4" />
-      </svg>
-    );
-  }
-  if (name === "available") {
-    return (
-      <svg {...common}>
-        <path d="M5 5h14v14H5z" />
-        <path d="M8 9h8M8 13h5" />
-      </svg>
-    );
-  }
-  if (name === "results") {
-    return (
-      <svg {...common}>
-        <path d="M5 19h14" />
-        <path d="M7 16V9" />
-        <path d="M12 16V6" />
-        <path d="M17 16v-4" />
-      </svg>
-    );
-  }
-  if (name === "ai") {
-    return (
-      <svg {...common}>
-        <path d="M12 3l2.2 5.4L20 10l-5.8 1.6L12 17l-2.2-5.4L4 10l5.8-1.6z" />
-      </svg>
-    );
-  }
-  return (
-    <svg {...common}>
-      <path d="M5 12h14" />
-    </svg>
-  );
+
+  if (name === "refresh") return <svg {...common}><path d="M21 12a9 9 0 1 1-2.6-6.4" /><path d="M21 4v6h-6" /></svg>;
+  if (name === "download") return <svg {...common}><path d="M12 3v12" /><path d="M8 11l4 4 4-4" /><path d="M4 20h16" /></svg>;
+  if (name === "logout") return <svg {...common}><path d="M10 17l-5-5 5-5" /><path d="M11 12h5" /><path d="M14 4h5v16h-5" /></svg>;
+  if (name === "start") return <svg {...common}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 12h6" /></svg>;
+  if (name === "overview") return <svg {...common}><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" /></svg>;
+  if (name === "available") return <svg {...common}><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>;
+  if (name === "results") return <svg {...common}><path d="M12 2v20M2 12h20" /></svg>;
+  if (name === "vault") return <svg {...common}><path d="M3 7h18" /><path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" /><rect x="3" y="7" width="18" height="14" rx="2" /><path d="M9 12h6" /></svg>;
+  if (name === "ai") return <svg {...common}><path d="M12 3l2.2 5.4L20 10l-5.8 1.6L12 17l-2.2-5.4L4 10l5.8-1.6z" /></svg>;
+  return <svg {...common}><path d="M5 12h14" /></svg>;
 }
 
-export default function StudentDashboardPage({ token, email, onTakeExam, onLogout, latestReport }) {
-  const modules = [
-    { id: "overview", label: "Overview", note: "Summary and quick actions", icon: "overview" },
-    { id: "available", label: "Available Exams", note: "Start assigned exams", icon: "available" },
-    { id: "results", label: "Results", note: "Attempt history and scores", icon: "results" },
-    { id: "ai-report", label: "AI Report", note: "Performance intelligence", icon: "ai" },
-  ];
-
+export default function StudentDashboardPage({ token, email, onTakeExam, onLogout, latestReport: initialReport }) {
   const [activeModule, setActiveModule] = useState("overview");
   const [assignedExams, setAssignedExams] = useState([]);
   const [attemptedExams, setAttemptedExams] = useState([]);
+  const [activeReport, setActiveReport] = useState(initialReport || null);
+  const [storedReports, setStoredReports] = useState([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [vaultLoading, setVaultLoading] = useState(false);
   const [error, setError] = useState("");
   const [dashboardLoading, setDashboardLoading] = useState(true);
 
-  const loadDashboard = async () => {
-    setError("");
-    setDashboardLoading(true);
-    try {
-      const { data } = await api.get("/exam/dashboard", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setAssignedExams(data.assigned_exams || []);
-      setAttemptedExams(data.attempted_exams || []);
-    } catch (err) {
-      if (err?.response?.status === 401) {
-        return;
-      }
-      setError(err?.response?.data?.detail || "Unable to load dashboard");
-    } finally {
-      setDashboardLoading(false);
-    }
-  };
+  const modules = [
+    { id: "overview", label: "Status", note: "Live telemetry and nodes", icon: "overview" },
+    { id: "available", label: "Assessments", note: "Pending logic units", icon: "available" },
+    { id: "results", label: "Audit Log", note: "Historical performance", icon: "results" },
+    { id: "reports", label: "Reports Vault", note: "Stored exam intelligence reports", icon: "vault" },
+    { id: "ai-report", label: "AI Analytics", note: "Neural behavioral insights", icon: "ai" }
+  ];
 
-  useEffect(() => {
-    loadDashboard();
+  const loadStoredReports = useCallback(async () => {
+    setVaultLoading(true);
+    try {
+      const { data } = await api.get("/exam/reports", { headers: { Authorization: `Bearer ${token}` } });
+      setStoredReports(Array.isArray(data) ? data : []);
+    } catch {
+      setError("Reports vault sync failed.");
+    } finally {
+      setVaultLoading(false);
+    }
   }, [token]);
 
+  const loadDashboard = useCallback(async () => {
+    setDashboardLoading(true);
+    try {
+      const { data } = await api.get("/exam/dashboard", { headers: { Authorization: `Bearer ${token}` } });
+      setAssignedExams(data.assigned_exams || []);
+      setAttemptedExams(data.attempted_exams || []);
+    } catch { setError("Neural Synchronization Failure."); } finally { setDashboardLoading(false); }
+  }, [token]);
+
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
+  useEffect(() => { loadStoredReports(); }, [loadStoredReports]);
+
   useEffect(() => {
-    if (!error) return;
-    const timer = setTimeout(() => setError(""), 7000);
-    return () => clearTimeout(timer);
-  }, [error]);
+    if (initialReport) setActiveReport(initialReport);
+    loadStoredReports();
+  }, [initialReport, loadStoredReports]);
 
-  const summary = useMemo(
-    () => ({
-      assignedCount: assignedExams.length,
-      attemptedCount: attemptedExams.length,
-      completedCount: attemptedExams.filter((attempt) => attempt.status === "completed").length,
-      avgScore:
-        attemptedExams.length > 0
-          ? Math.round(
-              attemptedExams.reduce((acc, attempt) => acc + Number(attempt.score_percent || 0), 0) / attemptedExams.length
-            )
-          : 0,
-    }),
-    [assignedExams, attemptedExams]
-  );
-
-  const downloadMyData = async () => {
-    setError("");
+  const fetchSessionReport = async (sessionId) => {
+    setReportLoading(true);
+    setActiveModule("ai-report");
     try {
-      const { data } = await api.get("/compliance/my-data", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "my-proctor-data.json";
-      link.click();
-      URL.revokeObjectURL(url);
-      setError("");
-    } catch (err) {
-      setError(err?.response?.data?.detail || "Unable to export your data");
+      const { data } = await api.get(`/exam/report/${sessionId}`, { headers: { Authorization: `Bearer ${token}` } });
+      setActiveReport(data);
+      await loadStoredReports();
+    } catch { setError("Report signal lost."); } finally { setReportLoading(false); }
+  };
+
+  const exportReportPdf = (sessionId) => {
+    if (!sessionId) {
+      setError("PDF export is available only for reports linked to an exam session.");
+      return;
+    }
+    window.open(`${api.defaults.baseURL}/exam/report/${sessionId}/pdf`, "_blank");
+  };
+
+  const exportReportJson = (entry) => {
+    const fileName = `${(entry.exam_code || "report").toLowerCase()}-${entry.session_id || "local"}.json`;
+    const blob = new Blob([JSON.stringify(entry.report, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const removeStoredReport = async (sessionId) => {
+    if (!sessionId) return;
+    try {
+      await api.delete(`/exam/reports/${sessionId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (activeReport?.session_id === sessionId) {
+        setActiveReport(null);
+      }
+      await loadStoredReports();
+    } catch {
+      setError("Failed to delete stored report.");
     }
   };
 
-  const downloadReportPdf = async (sessionId, examCode) => {
-    setError("");
+  const clearStoredReports = async () => {
     try {
-      const response = await api.get(`/exam/report/${sessionId}/pdf`, {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: "blob",
-      });
-
-      const contentType = String(response.headers?.["content-type"] || "").toLowerCase();
-      const dataBlob = response.data;
-
-      if (!(dataBlob instanceof Blob) || !contentType.includes("application/pdf")) {
-        let detail = "Unable to download report PDF";
-        if (dataBlob instanceof Blob) {
-          const text = await dataBlob.text();
-          try {
-            const parsed = JSON.parse(text);
-            detail = parsed?.detail || detail;
-          } catch {
-            if (text) detail = text;
-          }
-        }
-        throw new Error(detail);
-      }
-
-      const blob = new Blob([dataBlob], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `exam-report-${String(examCode || "session").toLowerCase()}-${sessionId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      setError("");
-    } catch (err) {
-      const responseBlob = err?.response?.data;
-      if (responseBlob instanceof Blob) {
-        try {
-          const text = await responseBlob.text();
-          const parsed = JSON.parse(text);
-          setError(parsed?.detail || "Unable to download report PDF");
-          return;
-        } catch {
-          // Fall through to generic handling.
-        }
-      }
-      setError(err?.message || err?.response?.data?.detail || "Unable to download report PDF");
+      await api.delete("/exam/reports", { headers: { Authorization: `Bearer ${token}` } });
+      setActiveReport(null);
+      await loadStoredReports();
+    } catch {
+      setError("Failed to clear reports vault.");
     }
   };
 
-  const renderAiReport = () => {
-    if (!latestReport) {
+  const renderModule = () => {
+    if (activeModule === "ai-report") {
       return (
-        <article className="question-panel">
-          <h3>AI Performance Intelligence Report</h3>
-          <div className="empty-state">
-            <div className="empty-icon">AI</div>
-            <p>No report generated yet. Complete an exam to view analytics.</p>
-          </div>
-        </article>
+        <div className="intelligence-workspace" style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: "24px" }}>
+           <div className="card fade-in" style={{ padding: "32px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "32px" }}>
+                 <h1 style={{ fontSize: "1.8rem", margin: 0 }}>Behavioral Analytics</h1>
+                 <button className="secondary" onClick={() => window.open(`${api.defaults.baseURL}/exam/report/${activeReport?.session_id}/pdf`, '_blank')}>Export PDF</button>
+              </div>
+              {!activeReport ? <p>Select an assessment from history to activate.</p> : (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "32px" }}>
+                    <div className="kpi-card" style={{ padding: "20px" }}><span>Neural Consistency</span><br/><strong style={{ fontSize: "1.8rem" }}>{activeReport.neural_consistency}%</strong></div>
+                    <div className="kpi-card" style={{ padding: "20px" }}><span>Cognitive Lag (Avg)</span><br/><strong style={{ fontSize: "1.8rem" }}>{activeReport.average_lag}s</strong></div>
+                  </div>
+                  {activeReport.topic_breakdown.map(t => (
+                    <div key={t.topic} style={{ marginBottom: "16px" }}>
+                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}><strong>{t.topic}</strong><span>{t.mastery_percent}%</span></div>
+                       <div style={{ height: "6px", background: "#f1f5f9", borderRadius: "100px" }}><div style={{ width: `${t.mastery_percent}%`, height: "100%", background: "var(--primary)", borderRadius: "100px" }} /></div>
+                    </div>
+                  ))}
+                </>
+              )}
+           </div>
+           <div className="card fade-in" style={{ padding: "32px" }}>
+              <h4>AI Optimization Focus</h4>
+              {activeReport ? (
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {activeReport.recommended_actions.map((act, i) => <div key={i} style={{ display: "flex", gap: "10px", padding: "16px", background: "#f8fafc", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.85rem" }}>◆ {act}</div>)}
+                </div>
+              ) : <p>Telemetry signal lost.</p>}
+           </div>
+        </div>
+      );
+    }
+    if (activeModule === "available") {
+      return (
+        <div className="fade-in card" style={{ padding: "40px" }}>
+           <h2 style={{ marginBottom: "8px" }}>Assessments Awaiting Initiation</h2>
+           <p style={{ opacity: 0.5, marginBottom: "32px" }}>Select a unit to begin high-fidelity proctoring session.</p>
+           <div style={{ display: "grid", gap: "16px" }}>
+              {assignedExams.length === 0 ? <p>No active assessments assigned to your node.</p> : assignedExams.map(ex => (
+                <div key={ex.exam_code} style={{ padding: "24px", background: "#f8fafc", border: "1px solid var(--border)", borderRadius: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                   <div>
+                      <strong style={{ fontSize: "1.1rem" }}>{ex.title}</strong>
+                      <div style={{ fontSize: "0.8rem", opacity: 0.5, marginTop: "4px" }}>CODE: {ex.exam_code} • {ex.question_count} Questions</div>
+                   </div>
+                   <button className="primary" onClick={() => onTakeExam(ex.exam_code)}>Initialize Session</button>
+                </div>
+              ))}
+           </div>
+        </div>
       );
     }
 
-    return (
-      <article className="question-panel report-panel section-gap">
-        <h3>AI Performance Intelligence Report</h3>
-        <div className="muted-row">Stage: {latestReport.stage}</div>
-        <div className="muted-row">Integrity Status: {latestReport.integrity_band}</div>
-        <div className="muted-row">Score: {latestReport.score_percent}%</div>
-        <p>{latestReport.overall_summary}</p>
-
-        <h4>Strength Areas</h4>
-        <ul className="plain-list compact-list">
-          {(latestReport.strengths || []).length ? (
-            latestReport.strengths.map((item, index) => <li key={`strength-${index}`}>{item}</li>)
-          ) : (
-            <li>No strong topic signals yet. Continue consistent practice.</li>
-          )}
-        </ul>
-
-        <h4>Upgrade Areas</h4>
-        <ul className="plain-list compact-list">
-          {(latestReport.improvement_areas || []).length ? (
-            latestReport.improvement_areas.map((item, index) => <li key={`improve-${index}`}>{item}</li>)
-          ) : (
-            <li>Performance is balanced across evaluated topics.</li>
-          )}
-        </ul>
-
-        <h4>Professional Recommendations</h4>
-        <ul className="plain-list compact-list">
-          {(latestReport.recommended_actions || []).map((item, index) => (
-            <li key={`recommend-${index}`}>{item}</li>
-          ))}
-        </ul>
-
-        <h4>Topic Breakdown</h4>
-        <div className="topic-table-wrap">
-          <table className="topic-table">
-            <thead>
-              <tr>
-                <th>Topic</th>
-                <th>Correct</th>
-                <th>Incorrect</th>
-                <th>Unanswered</th>
-                <th>Mastery %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(latestReport.topic_breakdown || []).map((row) => (
-                <tr key={row.topic}>
-                  <td>{row.topic}</td>
-                  <td>{row.correct}</td>
-                  <td>{row.incorrect}</td>
-                  <td>{row.unanswered}</td>
-                  <td>{row.mastery_percent}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </article>
-    );
-  };
-
-  const renderAvailableExams = () => (
-    <article className="question-panel">
-      <h3 className="panel-title">Available Infrastructure Nodes</h3>
-      {dashboardLoading ? (
-         <div style={{ opacity: 0.5, padding: "20px" }}>Synchronizing...</div>
-      ) : assignedExams.length ? (
-        <ul className="exam-list">
-          {assignedExams.map((exam) => (
-            <li key={exam.exam_code} className="exam-item-card">
-              <div className="exam-meta">
-                <h4>{exam.title}</h4>
-                <p>Node ID: {exam.exam_code} | Questions: {exam.question_count}</p>
-              </div>
-              <button className="primary" onClick={() => onTakeExam(exam.exam_code)}>
-                <span>Initialize Node</span>
-                <UiIcon name="start" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="empty-state" style={{ textAlign: "center", padding: "40px" }}>
-          <p style={{ color: "var(--text-muted)" }}>No assessments assigned to this cluster.</p>
-        </div>
-      )}
-    </article>
-  );
-
-  const renderResults = () => (
-    <article className="question-panel">
-      <h3 className="panel-title">Audit Log & Performance</h3>
-      {dashboardLoading ? (
-        <div style={{ opacity: 0.5, padding: "20px" }}>Accessing secure records...</div>
-      ) : attemptedExams.length ? (
-        <ul className="results-list">
-          {attemptedExams.map((attempt) => (
-            <li key={attempt.session_id} className="result-item-card">
-              <div className="exam-meta">
-                <h4>{attempt.title}</h4>
-                <p>Node: {attempt.exam_code} | {new Date(attempt.started_at).toLocaleDateString()}</p>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
-                <div style={{ textAlign: "right" }}>
-                   <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "1px" }}>Success Rate</div>
-                   <strong style={{ fontSize: "1.2rem", color: attempt.score_percent >= 50 ? "var(--success)" : "var(--danger)" }}>{attempt.score_percent}%</strong>
-                </div>
-                <button className="secondary" style={{ padding: "10px 16px" }} onClick={() => downloadReportPdf(attempt.session_id, attempt.exam_code)}>
-                  <UiIcon name="download" />
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="empty-state" style={{ textAlign: "center", padding: "40px", opacity: 0.5 }}>
-          <p>No historical telemetry available.</p>
-        </div>
-      )}
-    </article>
-  );
-
-  const renderModule = () => {
-    if (activeModule === "available") {
-      return <section className="dashboard-grid one-column">{renderAvailableExams()}</section>;
-    }
-
     if (activeModule === "results") {
-      return <section className="dashboard-grid one-column">{renderResults()}</section>;
+      return (
+        <div className="fade-in card" style={{ padding: "40px" }}>
+           <h2 style={{ marginBottom: "8px" }}>Audit History Log</h2>
+           <p style={{ opacity: 0.5, marginBottom: "32px" }}>Historical assessment data and risk analysis telemetry.</p>
+           <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ textAlign: "left", opacity: 0.4, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px" }}><th>Unit</th><th>Status</th><th style={{ textAlign: "right" }}>Risk/Score</th><th style={{ textAlign: "right" }}>Report</th></tr></thead>
+              <tbody>
+                 {attemptedExams.length === 0 ? <tr><td colSpan="4" style={{ padding: "40px", textAlign: "center", opacity: 0.5 }}>No audit history available.</td></tr> : attemptedExams.map(s => (
+                   <tr key={s.session_id} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }} onClick={() => fetchSessionReport(s.session_id)}>
+                      <td style={{ padding: "20px 0" }}><strong>{s.title}</strong></td>
+                      <td><span style={{ color: "var(--success)", fontWeight: 900 }}>SUBMITTED</span></td>
+                      <td style={{ textAlign: "right" }}><strong>{s.score_percent}%</strong></td>
+                      <td style={{ textAlign: "right" }}>
+                        <button
+                          className="secondary"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            fetchSessionReport(s.session_id);
+                          }}
+                        >
+                          Save to Vault
+                        </button>
+                      </td>
+                   </tr>
+                 ))}
+              </tbody>
+           </table>
+        </div>
+      );
     }
 
-    if (activeModule === "ai-report") {
-      return <section className="dashboard-grid one-column">{renderAiReport()}</section>;
+    if (activeModule === "reports") {
+      return (
+        <div className="fade-in card" style={{ padding: "40px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+            <div>
+              <h2 style={{ marginBottom: "8px" }}>Reports Vault</h2>
+              <p style={{ opacity: 0.6 }}>Stored intelligence reports generated after your exam sessions.</p>
+            </div>
+            <button className="secondary" onClick={clearStoredReports} disabled={!storedReports.length}>Clear Vault</button>
+          </div>
+
+          {!storedReports.length ? (
+            <div style={{ padding: "32px", border: "1px dashed var(--border)", borderRadius: "16px", opacity: 0.7 }}>
+              No stored reports yet. Open any completed exam report from Audit Log to save it here.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left", opacity: 0.45, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px" }}>
+                  <th style={{ padding: "10px 0" }}>Exam</th>
+                  <th>Integrity</th>
+                  <th>Score</th>
+                  <th>Stored</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {storedReports.map((entry) => (
+                  <tr key={entry.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "16px 0" }}>
+                      <strong>{entry.exam_title}</strong>
+                      <div style={{ fontSize: "0.75rem", opacity: 0.55 }}>{entry.exam_code}</div>
+                    </td>
+                    <td>{entry.integrity_band}</td>
+                    <td>{entry.score_percent}%</td>
+                    <td>{new Date(entry.stored_at).toLocaleString()}</td>
+                    <td style={{ textAlign: "right", display: "flex", justifyContent: "flex-end", gap: "8px", padding: "12px 0" }}>
+                      <button className="secondary" onClick={() => { setActiveReport(entry.report); setActiveModule("ai-report"); }}>View</button>
+                      <button className="secondary" onClick={() => exportReportJson(entry)}>JSON</button>
+                      <button className="secondary" onClick={() => exportReportPdf(entry.session_id)} disabled={!entry.session_id}>PDF</button>
+                      <button className="secondary" onClick={() => removeStoredReport(entry.session_id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {vaultLoading ? <div style={{ marginTop: "12px", opacity: 0.55 }}>Syncing reports vault...</div> : null}
+        </div>
+      );
     }
 
-    const summaryCards = [
-      { label: "Assigned Nodes", val: summary.assignedCount },
-      { label: "Total Attempts", val: summary.attemptedCount },
-      { label: "Nodes Completed", val: summary.completedCount },
-      { label: "Fleet Success", val: `${summary.avgScore}%` },
-    ];
-
+    // Default overview/status
     return (
-      <section className="dashboard-grid">
-         <div className="kpi-strip">
-            {summaryCards.map((card, i) => (
-              <div key={i} className="kpi-card">
-                <span>{card.label}</span>
-                <strong>{card.val}</strong>
+      <div className="fade-in" style={{ display: "grid", gap: "40px" }}>
+         <div className="kpi-strip" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "24px", marginBottom: "32px" }}>
+            {[
+               { label: "Assigned Nodes", val: assignedExams.length },
+               { label: "Neural History", val: attemptedExams.length },
+               { label: "Mean Accuracy", val: `${Math.round(attemptedExams.reduce((acc, a) => acc + a.score_percent, 0) / (attemptedExams.length || 1))}%` },
+               { label: "System Status", val: "Optimal" }
+            ].map((k, i) => (
+              <div key={i} className="kpi-card" style={{ padding: "24px", borderLeft: "4px solid var(--primary)" }}>
+                 <p style={{ margin: 0, opacity: 0.5, textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 800 }}>{k.label}</p>
+                 <strong style={{ fontSize: "2rem", display: "block", marginTop: "8px" }}>{k.val}</strong>
               </div>
             ))}
          </div>
-        {renderAvailableExams()}
-        {renderResults()}
-      </section>
+
+         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "24px" }}>
+            <div className="card" style={{ padding: "32px" }}>
+               <h3>Live Terminal Feed (Active Log)</h3>
+               <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "24px" }}>
+                  <thead><tr style={{ textAlign: "left", opacity: 0.4, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px" }}><th>Unit</th><th>Status</th><th style={{ textAlign: "right" }}>Score</th></tr></thead>
+                  <tbody>
+                     {attemptedExams.slice(0, 5).map(s => (
+                       <tr key={s.session_id} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }} onClick={() => fetchSessionReport(s.session_id)}>
+                          <td style={{ padding: "16px 0" }}><strong>{s.title}</strong></td>
+                          <td><span style={{ color: "var(--success)", fontWeight: 900 }}>SUBMITTED</span></td>
+                          <td style={{ textAlign: "right" }}>{s.score_percent}%</td>
+                       </tr>
+                     ))}
+                  </tbody>
+               </table>
+            </div>
+            <div className="card" style={{ padding: "32px" }}>
+               <h3>Immediate Initiation</h3>
+               <div style={{ display: "grid", gap: "10px", marginTop: "24px" }}>
+                  {assignedExams.slice(0, 3).map(ex => (
+                    <div key={ex.exam_code} style={{ padding: "20px", background: "#f8fafc", border: "1px solid var(--border)", borderRadius: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                       <div><strong>{ex.title}</strong><div style={{ fontSize: "0.75rem", opacity: 0.5 }}>{ex.exam_code}</div></div>
+                       <button className="primary" onClick={() => onTakeExam(ex.exam_code)}>Start</button>
+                    </div>
+                  ))}
+               </div>
+            </div>
+         </div>
+      </div>
     );
+
   };
 
   return (
-    <main className="student-dashboard-shell">
-      <aside className="student-module-rail">
-        <header className="rail-header">
-           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-              <div className="brand-dot"></div>
-              <strong style={{ fontSize: "0.85rem", letterSpacing: "2px", fontWeight: 800 }}>PROCTOR360 GLOBAL</strong>
-           </div>
-           <p style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", opacity: 0.5 }}>Candidate Workspace</p>
-        </header>
-
-        <nav className="module-list">
-          {modules.map((module) => (
-            <button
-              key={module.id}
-              type="button"
-              className={activeModule === module.id ? "module-item active" : "module-item"}
-              onClick={() => setActiveModule(module.id)}
-            >
-              <div className="module-icon"><UiIcon name={module.icon} /></div>
-              <div className="module-info">
-                <strong>{module.label}</strong>
-                <span>{module.note}</span>
-              </div>
-            </button>
-          ))}
+    <div className="student-dashboard-shell" style={{ display: "grid", gridTemplateColumns: "300px 1fr", minHeight: "100vh" }}>
+      <aside className="student-module-rail" style={{ background: "#000", color: "#fff", padding: "40px 20px", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "40px", padding: "0 10px" }}>
+           <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#fff", boxShadow: "0 0 8px #fff" }} />
+           <strong style={{ letterSpacing: "1px" }}>PROCTOR360 GLOBAL</strong>
+        </div>
+        <nav style={{ display: "grid", gap: "8px" }}>
+           {modules.map(mod => (
+             <button key={mod.id} onClick={() => setActiveModule(mod.id)} style={{ display: "flex", gap: "16px", alignItems: "center", padding: "18px", borderRadius: "16px", border: "none", background: activeModule === mod.id ? "rgba(255,255,255,0.1)" : "transparent", color: "#fff", textAlign: "left", cursor: "pointer" }}>
+                <div style={{ opacity: activeModule === mod.id ? 1 : 0.5 }}><UiIcon name={mod.icon} /></div>
+                <div><div style={{ fontWeight: 800, fontSize: "0.9rem" }}>{mod.label}</div><div style={{ fontSize: "0.65rem", opacity: 0.4 }}>{mod.note}</div></div>
+             </button>
+           ))}
         </nav>
+        <button className="module-item" onClick={onLogout} style={{ marginTop: "auto", background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", border: "1px solid rgba(239, 68, 68, 0.2)", cursor: "pointer", fontWeight: 800, display: "flex", gap: "8px", alignItems: "center", padding: "12px 18px", borderRadius: "12px", fontSize: "0.8rem", width: "fit-content", alignSelf: "center" }}><UiIcon name="logout" /> Disconnect</button>
 
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "16px" }}>
-           <button className="module-item" onClick={onLogout} style={{ width: "100%", opacity: 0.6 }}>
-              <div className="module-icon"><UiIcon name="logout" /></div>
-              <div className="module-info">
-                <strong>Sign Out</strong>
-              </div>
-           </button>
-        </div>
+
       </aside>
+      <main style={{ padding: "60px", background: "#fbfcfd", overflowY: "auto" }}>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "60px" }}>
+           <div><h1 style={{ margin: 0, fontSize: "2.4rem", fontWeight: 900 }}>{modules.find(m => m.id === activeModule)?.label || "Dashboard"}</h1><p style={{ opacity: 0.5 }}>Distributed proctoring node: <strong>{email}</strong></p></div>
 
-      <section className="student-workspace-area">
-        <header className="app-topbar">
-          <div>
-            <h2>{modules.find((m) => m.id === activeModule)?.label || "Student Dashboard"}</h2>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>Distributed Proctoring Endpoint: {email}</p>
-          </div>
-          <div className="topbar-user">
-            <div className="avatar">{email[0].toUpperCase()}</div>
-            <span>{email.split("@")[0]}</span>
-          </div>
+           <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+              <div style={{ border: "1.5px solid var(--success)", padding: "8px 16px", color: "var(--success)", borderRadius: "100px", fontSize: "0.75rem", fontWeight: 900 }}>◆ NODE ONLINE</div>
+              <div style={{ background: "#fff", border: "1px solid var(--border)", padding: "10px 20px", borderRadius: "100px", display: "flex", alignItems: "center", gap: "12px" }}>
+                 <div style={{ width: "32px", height: "32px", background: "#000", color: "#fff", borderRadius: "100px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900 }}>{email[0].toUpperCase()}</div>
+                 <div style={{ textAlign: "left" }}><div style={{ fontSize: "0.85rem", fontWeight: 800 }}>{email.split("@")[0]}</div><div style={{ fontSize: "0.65rem", opacity: 0.5 }}>Candidate Node</div></div>
+              </div>
+           </div>
         </header>
-
-        <div className="actions-row" style={{ marginBottom: "32px", display: "flex", gap: "12px" }}>
-          <button className="secondary" onClick={loadDashboard}><UiIcon name="refresh" /><span>Sync Node</span></button>
-          <button className="secondary" onClick={downloadMyData}><UiIcon name="download" /><span>Archival PDF</span></button>
-        </div>
-
-        {error ? <div style={{ background: "rgba(239, 68, 68, 0.1)", color: "var(--danger)", padding: "16px", borderRadius: "16px", border: "1px solid rgba(239, 68, 68, 0.2)", marginBottom: "24px" }}>{error}</div> : null}
-
         {renderModule()}
-      </section>
-    </main>
+      </main>
+    </div>
   );
 }

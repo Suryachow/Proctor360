@@ -288,7 +288,7 @@ async def generate_questions_with_ai_agent(
     admin_request: str | None,
     existing_prompt_keys: set[str],
 ) -> list[dict]:
-    if not settings.groq_api_key:
+    if not (settings.groq_api_key or settings.groq_api_keys):
         raise ValueError("High-quality AI generation requires GROQ_API_KEY. Add it to .env and restart api service.")
 
     candidates = await _collect_groq_candidates(

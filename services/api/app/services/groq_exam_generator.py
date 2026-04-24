@@ -8,6 +8,32 @@ from app.core.config import settings
 
 
 _IMAGE_STEM = "https://dummyimage.com/960x540/0f172a/e2e8f0.png&text="
+_GROQ_KEY_INDEX = 0
+
+
+def _get_groq_keys() -> list[str]:
+    keys = []
+    for raw_key in (settings.groq_api_keys or "").split(","):
+        key = raw_key.strip()
+        if key:
+            keys.append(key)
+
+    fallback_key = (settings.groq_api_key or "").strip()
+    if fallback_key and fallback_key not in keys:
+        keys.append(fallback_key)
+
+    return keys
+
+
+def _next_groq_key(keys: list[str]) -> str:
+    global _GROQ_KEY_INDEX
+
+    if not keys:
+        raise ValueError("GROQ_API_KEY is not configured")
+
+    key = keys[_GROQ_KEY_INDEX % len(keys)]
+    _GROQ_KEY_INDEX = (_GROQ_KEY_INDEX + 1) % len(keys)
+    return key
 
 
 def _is_reasoning_topic(topic: str) -> bool:
@@ -97,7 +123,8 @@ async def generate_mcq_set_with_groq(
     diagram_question_count: int,
     admin_request: str | None,
 ) -> list[dict[str, Any]]:
-    if not settings.groq_api_key:
+    groq_keys = _get_groq_keys()
+    if not groq_keys:
         raise ValueError("GROQ_API_KEY is not configured")
 
     image_question_count = max(0, min(image_question_count, question_count))
@@ -145,22 +172,34 @@ async def generate_mcq_set_with_groq(
         "]}. Non-image questions must omit image_url/image_alt. Non-diagram questions must omit diagram_mermaid/diagram_alt."
     )
 
+    last_error: Exception | None = None
+    payload = None
     async with httpx.AsyncClient(timeout=45.0) as client:
-        response = await client.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {settings.groq_api_key}"},
-            json={
-                "model": settings.groq_model,
-                "temperature": 0.7,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            },
-        )
-        response.raise_for_status()
+        for _ in range(len(groq_keys)):
+            api_key = _next_groq_key(groq_keys)
+            try:
+                response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": settings.groq_model,
+                        "temperature": 0.7,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                    },
+                )
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as exc:
+                last_error = exc
+                continue
 
-    payload = response.json()
+    if payload is None:
+        raise ValueError(f"Groq request failed across all configured keys: {last_error}")
+
     content = payload.get("choices", [{}])[0].get("message", {}).get("content", "")
     parsed = _extract_json(content)
 

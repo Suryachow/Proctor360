@@ -1,212 +1,235 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { api, setAuthToken } from "../services/api";
-
-function UiIcon({ name }) {
-  const common = {
-    className: "icon-svg",
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: "1.8",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
-    "aria-hidden": "true",
-  };
-
-  if (name === "camera") {
-    return (
-      <svg {...common}>
-        <path d="M4 8h3l2-2h6l2 2h3v10H4z" />
-        <circle cx="12" cy="13" r="3.5" />
-      </svg>
-    );
-  }
-
-  if (name === "capture") {
-    return (
-      <svg {...common}>
-        <circle cx="12" cy="12" r="7" />
-        <circle cx="12" cy="12" r="2.5" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg {...common}>
-      <path d="M5 12h14" />
-    </svg>
-  );
-}
 
 const hashDevice = async () => {
   const raw = `${navigator.userAgent}|${navigator.language}|${screen.width}x${screen.height}`;
   const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
-  return Array.from(new Uint8Array(buffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 
 export default function LoginPage({ onLogin }) {
   const [mode, setMode] = useState("login");
-  const [email, setEmail] = useState("student@example.com");
-  const [password, setPassword] = useState("Password123!");
+  const [email, setEmail] = useState("student@test.com");
+  const [password, setPassword] = useState("Student123!");
   const [error, setError] = useState("");
-  const [liveImage, setLiveImage] = useState("");
-  const [cameraReady, setCameraReady] = useState(false);
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setCameraReady(true);
-    } catch {
-      setError("Unable to access camera for live registration image");
-    }
-  };
-
-  const captureLiveImage = () => {
-    if (!videoRef.current || !canvasRef.current) {
-      setError("Camera is not ready");
-      return;
-    }
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video.videoWidth || !video.videoHeight) {
-      setError("Video is not ready yet. Please wait a second and try again.");
-      return;
-    }
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    setLiveImage(canvas.toDataURL("image/jpeg", 0.9));
-    setError("");
-  };
-
-  useEffect(() => {
-    if (mode !== "register") {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-      setCameraReady(false);
-      setLiveImage("");
-    }
-  }, [mode]);
-
-  useEffect(() => {
-    return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const submit = async (event) => {
     event.preventDefault();
     setError("");
-
+    setIsSyncing(true);
     try {
       const device_hash = await hashDevice();
       const normalizedEmail = email.trim().toLowerCase();
       const path = mode === "login" ? "/auth/login" : "/auth/register";
-      if (mode === "register" && !liveImage) {
-        setError("Capture your live image before registering");
-        return;
-      }
-
-      const payload =
-        mode === "register"
-          ? { email: normalizedEmail, password, device_hash, live_image_base64: liveImage }
-          : { email: normalizedEmail, password, device_hash };
-
+      const payload = mode === "register" ? { email: normalizedEmail, password, device_hash, live_image_base64: "" } : { email: normalizedEmail, password, device_hash };
       const { data } = await api.post(path, payload);
       setAuthToken(data.access_token);
       onLogin(data.access_token, normalizedEmail);
     } catch (err) {
-      setError(err?.response?.data?.detail || "Authentication failed");
+      const detail = err?.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        setError(detail[0]?.msg || "Validation failed");
+      } else {
+        setError(detail || "Authentication failed");
+      }
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   return (
-    <div className="login-split-shell">
-      {/* ── Left Auth Panel ── */}
-      <section className="auth-left-panel">
-        <div className="auth-form-container">
-          <header>
-            <div style={{ marginBottom: "40px", display: "flex", alignItems: "center", gap: "10px" }}>
-               <div style={{ width: "24px", height: "24px", background: "#000", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ width: "8px", height: "8px", background: "#fff", borderRadius: "50%" }}></div>
-               </div>
-               <span style={{ fontWeight: 800, fontSize: "0.85rem", letterSpacing: "2px" }}>PROCTOR360</span>
-            </div>
-            <h1>Welcome back</h1>
-            <p className="welcome-sub">Enter your credentials to access your secure proctoring node.</p>
-          </header>
+    <div style={{
+      height: "100vh",
+      width: "100vw",
+      display: "flex",
+      overflow: "hidden",
+      backgroundColor: "#000",
+      fontFamily: "'Inter', sans-serif"
+    }}>
+      {/* ── LEFT SECTION (FORM) ── */}
+      <section style={{
+        flex: "0 0 40%",
+        display: "flex",
+        flexDirection: "column",
+        padding: "80px",
+        justifyContent: "center",
+        backgroundColor: "#000",
+        color: "#fff",
+        zIndex: 2,
+        borderRight: "1px solid rgba(255,255,255,0.25)" // INCREASED DIVIDER CONTRAST
+      }}>
+        <div style={{ marginBottom: "60px" }}>
+           <div style={{ display: "flex", alignItems: "center", gap: "10px", opacity: 1 }}> {/* FULL CONTRAST BRANDING */}
+             <div style={{ width: "22px", height: "22px", background: "#fff", borderRadius: "4px" }}></div>
+             <span style={{ fontWeight: 900, fontSize: "0.75rem", letterSpacing: "2.5px", textTransform: "uppercase" }}>Proctor360</span>
+           </div>
+        </div>
 
-          <div className="minimal-tabs">
-            <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Login</button>
-            <button className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>Register</button>
-          </div>
+        <div style={{ maxWidth: "340px", width: "100%" }}>
+          <h1 style={{ fontSize: "3.8rem", fontWeight: 900, marginBottom: "40px", marginTop: 0, letterSpacing: "-2.5px" }}>
+            {mode === "login" ? "Sign In" : "Register"}
+          </h1>
 
-          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column" }}>
-            <div className="form-group">
-              <label>Corporate Identity</label>
-              <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required placeholder="name@infrastructure.net" />
-            </div>
-            <div className="form-group">
-              <label>Secure Access Token</label>
-              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required placeholder="••••••••••••" />
-            </div>
-            
-            {mode === "register" ? (
-              <div className="bio-box-clean">
-                <label style={{ marginBottom: "16px", display: "block" }}>Biometric Signature Capture</label>
-                <video ref={videoRef} autoPlay muted playsInline className="video-preview-clean" />
-                <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
-                  <button type="button" className="btn-white" style={{ flex: 1, padding: "12px", fontSize: "0.8rem" }} onClick={startCamera}>
-                    Sensor: Init
-                  </button>
-                  <button type="button" className="btn-black" style={{ flex: 1, padding: "12px", fontSize: "0.8rem" }} onClick={captureLiveImage} disabled={!cameraReady}>
-                    Finalize Scan
-                  </button>
-                </div>
-                {liveImage ? <div style={{ color: "#065f46", fontSize: "0.8rem", marginTop: "12px", border: "1px solid #d1fae5", padding: "10px", borderRadius: "8px", background: "#f0fdf4" }}>
-                   ● Identity signature captured successfully.
-                </div> : null}
+          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
+            {/* EMAIL / USER NAME */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <label style={{ fontSize: "0.9rem", fontWeight: 700, color: "#E2E8F0" }}>User Name</label> {/* BRIGHTER LABEL */}
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: "16px", top: "50%", transform: "translateY(-50%)", color: "#3B82F6" }}>
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="m22 6-10 7L2 6"/></svg>
+                </span>
+                <input 
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Email or Username"
+                  style={{
+                    width: "100%",
+                    padding: "18px 16px 18px 48px",
+                    backgroundColor: "transparent",
+                    border: "1px solid #4B5563", // BRIGHTER BORDER
+                    borderRadius: "10px",
+                    color: "#fff",
+                    fontSize: "1rem",
+                    outline: "none",
+                    boxSizing: "border-box"
+                  }}
+                />
               </div>
-            ) : null}
-            
-            {error ? (
-              <div style={{ marginBottom: "24px", padding: "14px", background: "#fef2f2", border: "1px solid #fee2e2", color: "#b91c1c", fontSize: "0.85rem", borderRadius: "8px", fontWeight: 700 }}>
-                {error.toUpperCase()}
-              </div>
-            ) : null}
-            
-            <div>
-              <button className="btn-black" type="submit" style={{ padding: "20px" }}>
-                {mode === "login" ? "Authorise Candidate Entry" : "Finalise Registry"}
-              </button>
-              <button className="btn-white" type="button" onClick={() => window.location.reload()} style={{ padding: "16px" }}>Cancel</button>
             </div>
+
+            {/* PASSWORD */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <label style={{ fontSize: "0.9rem", fontWeight: 700, color: "#E2E8F0" }}>Password</label>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: "16px", top: "50%", transform: "translateY(-50%)", color: "#9CA3AF" }}>
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                </span>
+                <input 
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter Password"
+                  style={{
+                    width: "100%",
+                    padding: "18px 16px 18px 48px",
+                    backgroundColor: "transparent",
+                    border: "1px solid #4B5563", // BRIGHTER BORDER
+                    borderRadius: "10px",
+                    color: "#fff",
+                    fontSize: "1rem",
+                    outline: "none",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-start" }}>
+              <button type="button" style={{ background: "none", border: "none", color: "#9CA3AF", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", textTransform: "uppercase", letterSpacing: "1px" }}>Forgot Password?</button>
+            </div>
+
+            {error && (
+              <div style={{ color: "#ef4444", fontSize: "0.75rem", fontWeight: 600, textAlign: "left" }}>
+                {String(error).toUpperCase()}
+              </div>
+            )}
+
+            <button 
+              type="submit"
+              disabled={isSyncing}
+              style={{
+                width: "100%",
+                padding: "18px",
+                backgroundColor: "#3B82F6",
+                color: "#fff",
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "0.85rem",
+                fontWeight: 800,
+                cursor: "pointer",
+                marginTop: "12px",
+                transition: "0.2s",
+                opacity: isSyncing ? 0.7 : 1,
+                boxShadow: "0 10px 15px -3px rgba(59, 130, 246, 0.3)"
+              }}
+            >
+              {isSyncing ? "SYNCING..." : (mode === "login" ? "SIGN IN" : "CREATE ACCOUNT")}
+            </button>
           </form>
-          
-          <footer className="auth-footer-text">
-            © PROCTOR360 GLOBAL • CORPORATE ASSESSMENT 2024
-          </footer>
+
+          <div style={{ marginTop: "40px", textAlign: "left" }}>
+            <span style={{ color: "#9ca3af", fontSize: "0.85rem" }}>
+              {mode === "login" ? "Don't have an account? " : "Already have an account? "}
+              <button 
+                onClick={() => setMode(mode === "login" ? "register" : "login")}
+                style={{ background: "none", border: "none", color: "#fff", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}
+              >
+                {mode === "login" ? "Sign up" : "Sign in"}
+              </button>
+            </span>
+          </div>
         </div>
       </section>
 
-      {/* ── Right Cinematic Area ── */}
-      <section className="auth-right-panel">
-        <div className="infra-container-glass">
-            <img src="/proctoring_map.png" className="infra-image-glass" alt="Proctoring Ecosystem" />
+      {/* ── RIGHT SECTION (VISUAL) ── */}
+      <section style={{
+        flex: "1",
+        position: "relative",
+        backgroundImage: "url('/auth_bg.png')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      }}>
+        {/* DARK OVERLAY */}
+        <div style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.4)",
+          background: "linear-gradient(90deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0.2) 100%)",
+          zIndex: 1
+        }} />
+
+        <div style={{ position: "relative", zIndex: 2, padding: "80px", maxWidth: "480px" }}>
+          <h2 style={{ color: "#fff", fontSize: "1.8rem", fontWeight: 500, lineHeight: 1.4, marginBottom: "20px" }}>
+            A new way to experience AI proctoring in the infinite virtual space.
+          </h2>
+          <button style={{ 
+            background: "none", 
+            border: "none", 
+            borderBottom: "2px solid #fff", 
+            color: "#fff", 
+            fontWeight: 700, 
+            fontSize: "0.8rem", 
+            paddingBottom: "4px", 
+            cursor: "pointer", 
+            textTransform: "uppercase", 
+            letterSpacing: "1px" 
+          }}>Learn More</button>
+        </div>
+
+        {/* MOUSE SCROLL ICON (DECORATIVE) */}
+        <div style={{ position: "absolute", bottom: "40px", right: "40px", zIndex: 2, color: "#fff", opacity: 0.5 }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
         </div>
       </section>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        input:focus {
+          border-color: #3B82F6 !important;
+          background-color: rgba(59, 130, 246, 0.05) !important;
+        }
+        button:hover {
+          filter: brightness(1.1);
+        }
+      `}} />
     </div>
   );
 }

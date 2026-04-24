@@ -13,10 +13,21 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
+    # Bcrypt has a 72-byte limit
+    print("[DEBUG] Password length:", len(password.encode()))
+    print("[DEBUG] Password value:", password)
+    if len(password.encode()) > 72:
+        raise ValueError("Password too long (max 72 bytes)")
     return pwd_context.hash(password)
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
+    # Bcrypt has a 72-byte limit
+    print("[DEBUG] Password length (verify):", len(password.encode()))
+    print("[DEBUG] Password value (verify):", password)
+    if len(password.encode()) > 72:
+        print("[DEBUG] Password too long for bcrypt verify (max 72 bytes)")
+        return False
     return pwd_context.verify(password, hashed_password)
 
 

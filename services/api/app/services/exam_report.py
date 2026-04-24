@@ -1,115 +1,124 @@
 from collections import defaultdict
 from typing import Any
-
+from datetime import datetime
 from sqlalchemy.orm import Session
-
-from app.models.entities import Exam, ExamAnswer, ExamQuestion, ExamSession, Question
-
-
-def _stage_from_score(score_percent: float) -> str:
-    if score_percent >= 85:
-        return "Advanced"
-    if score_percent >= 70:
-        return "Proficient"
-    if score_percent >= 50:
-        return "Developing"
-    return "Foundation"
-
-
-def _integrity_band(risk_score: float) -> str:
-    if risk_score >= 80:
-        return "High Concern"
-    if risk_score >= 40:
-        return "Watchlist"
-    return "Stable"
-
+from app.models.entities import Exam, ExamAnswer, ExamQuestion, ExamSession, EvidenceFrame, Question, Violation
+from app.services.violation_engine import classify_risk_level
 
 def build_exam_report(db: Session, session: ExamSession, student_email: str) -> dict[str, Any]:
     exam = db.query(Exam).filter(Exam.code == session.exam_code).first()
     if not exam:
         return {
-            "stage": "Unavailable",
-            "overall_summary": "Exam metadata is unavailable for this session.",
-            "integrity_band": _integrity_band(session.risk_score),
+            "stage": "Diagnostic",
+            "overall_summary": "Session data is incomplete.",
+            "integrity_band": "Unknown",
             "strengths": [],
             "improvement_areas": [],
-            "recommended_actions": ["Contact admin to repair exam metadata before analysis."],
+            "recommended_actions": [],
             "topic_breakdown": [],
-            "score_percent": 0.0,
+            "score_percent": 0.0
         }
 
+    # 📊 1. GATHER DATA
     links = db.query(ExamQuestion).filter(ExamQuestion.exam_id == exam.id).all()
     question_ids = [link.question_id for link in links]
     questions = db.query(Question).filter(Question.id.in_(question_ids)).all() if question_ids else []
-    question_map = {question.id: question for question in questions}
-
+    
     answers = db.query(ExamAnswer).filter(ExamAnswer.session_id == session.id).all()
-    answer_map = {answer.question_id: answer for answer in answers}
+    answer_map = {a.question_id: a for a in answers}
+    
+    violations = db.query(Violation).filter(Violation.session_id == session.id).all()
+    violation_counts = defaultdict(int)
+    for v in violations:
+        violation_counts[v.event_type] += 1
 
-    topic_stats: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "correct": 0, "incorrect": 0, "unanswered": 0})
+    # 📈 2. CALCULATE METRICS
+    total_q = len(question_ids)
+    correct_all = sum(1 for a in answers if a.is_correct)
+    score_percent = round((correct_all / total_q) * 100, 2) if total_q else 0.0
 
-    for qid in question_ids:
-        question = question_map.get(qid)
-        topic = (question.topic if question else "general").lower()
-        topic_stats[topic]["total"] += 1
-
-        answer = answer_map.get(qid)
-        if not answer:
-            topic_stats[topic]["unanswered"] += 1
-            continue
-
-        if answer.is_correct:
-            topic_stats[topic]["correct"] += 1
+    # 🧠 3. TOPIC BREAKDOWN
+    topic_map = defaultdict(lambda: {"correct": 0, "incorrect": 0, "unanswered": 0, "total": 0})
+    for q in questions:
+        topic_name = q.topic.title()
+        topic_map[topic_name]["total"] += 1
+        ans = answer_map.get(q.id)
+        if not ans:
+            topic_map[topic_name]["unanswered"] += 1
+        elif ans.is_correct:
+            topic_map[topic_name]["correct"] += 1
         else:
-            topic_stats[topic]["incorrect"] += 1
-
-    total_questions = len(question_ids)
-    correct_answers = sum(item["correct"] for item in topic_stats.values())
-    score_percent = round((correct_answers / total_questions) * 100, 2) if total_questions else 0.0
+            topic_map[topic_name]["incorrect"] += 1
 
     topic_breakdown = []
-    for topic, stats in sorted(topic_stats.items(), key=lambda pair: pair[0]):
-        mastery_percent = round((stats["correct"] / stats["total"]) * 100, 2) if stats["total"] else 0.0
-        topic_breakdown.append(
-            {
-                "topic": topic,
-                "correct": stats["correct"],
-                "incorrect": stats["incorrect"],
-                "unanswered": stats["unanswered"],
-                "mastery_percent": mastery_percent,
-            }
-        )
+    for topic_name, m in topic_map.items():
+        topic_breakdown.append({
+            "topic": topic_name,
+            "correct": m["correct"],
+            "incorrect": m["incorrect"],
+            "unanswered": m["unanswered"],
+            "mastery_percent": round((m["correct"] / m["total"]) * 100, 2) if m["total"] else 0.0
+        })
 
-    strong_topics = [item["topic"] for item in topic_breakdown if item["mastery_percent"] >= 75]
-    weak_topics = [item["topic"] for item in topic_breakdown if item["mastery_percent"] < 60]
+    # 🛡️ 4. INTEGRITY PROVISO
+    phone_vios = violation_counts.get("phone_detected", 0)
+    risk = session.risk_score
+    if risk > 80 or phone_vios > 3:
+        integrity_band = "Critical Risk"
+    elif risk > 40:
+        integrity_band = "Moderate Concern"
+    else:
+        integrity_band = "Highly Reliable"
 
-    strengths = strong_topics[:3]
-    improvement_areas = weak_topics[:3]
+    risk_level = classify_risk_level(risk)
 
-    recommended_actions = []
-    for area in improvement_areas:
-        recommended_actions.append(f"Practice targeted drills in {area} with timed sets and review explanations.")
+    # 🏁 5. FINALIZE
+    summary = f"Candidate achieved {score_percent}% in '{exam.title}'. "
+    if integrity_band == "Critical Risk":
+        summary += "AI detected high-confidence integrity anomalies; the risk engine escalated the session for human validation."
+    else:
+        summary += "Assessment behavior remained within the enterprise policy envelope and did not require manual escalation."
 
-    if not recommended_actions:
-        recommended_actions.append("Sustain performance with mixed-difficulty mock tests and spaced revision.")
-
-    if session.risk_score >= 40:
-        recommended_actions.append("Improve exam discipline: maintain focus, avoid tab switches, and reduce policy violations.")
-
-    stage = _stage_from_score(score_percent)
-    integrity = _integrity_band(session.risk_score)
-    overall_summary = (
-        f"{student_email} achieved {score_percent}% in {exam.title}. "
-        f"Current stage is {stage} with integrity status {integrity}."
+    # 📸 6. EVIDENCE GALLERY
+    evidence_frames = (
+        db.query(EvidenceFrame)
+        .filter(EvidenceFrame.session_id == session.id)
+        .order_by(EvidenceFrame.timestamp.asc())
+        .all()
     )
 
+    evidence_summary = []
+    for ef in evidence_frames:
+        reason = (ef.ai_analysis or {}).get("reason", "unknown")
+        evidence_summary.append({
+            "id": ef.id,
+            "reason": reason,
+            "timestamp": ef.timestamp.isoformat() if ef.timestamp else None,
+            "frame_index": ef.frame_index,
+        })
+
+    # Get client-side credibility score if stored
+    client_metrics = {}
+    if session.report_data and isinstance(session.report_data, dict):
+        client_metrics = session.report_data.get("client_proctor_metrics", {})
+
+    credibility_score = client_metrics.get("credibilityScore", None)
+
     return {
-        "stage": stage,
-        "overall_summary": overall_summary,
-        "integrity_band": integrity,
-        "strengths": strengths,
-        "improvement_areas": improvement_areas,
-        "recommended_actions": recommended_actions,
+        "stage": "Audit Complete" if integrity_band != "Critical Risk" else "Integrity Flag",
+        "overall_summary": f"{summary} Risk level: {risk_level.replace('_', ' ').title()}.",
+        "integrity_band": integrity_band,
+        "strengths": [t["topic"] for t in topic_breakdown if t["mastery_percent"] >= 70][:3],
+        "improvement_areas": [t["topic"] for t in topic_breakdown if t["mastery_percent"] < 50][:3],
+        "recommended_actions": [
+            "Review conceptual basics in weak topics." if score_percent < 60 else "Advance to higher complexity tiers.",
+            "Maintain proctoring compliance; unauthorized device patterns detected." if phone_vios > 0 else "Excellent focus retention noted.",
+            "Human proctor review required before finalizing punitive action." if integrity_band == "Critical Risk" else "No human validation needed beyond routine audit."
+        ],
         "topic_breakdown": topic_breakdown,
         "score_percent": score_percent,
+        "evidence_summary": evidence_summary,
+        "evidence_count": len(evidence_frames),
+        "credibility_score": credibility_score,
+        "client_proctor_metrics": client_metrics if client_metrics else None,
     }

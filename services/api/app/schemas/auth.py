@@ -5,7 +5,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     device_hash: str
-    live_image_base64: str
+    live_image_base64: str | None = None
 
 
 class LoginRequest(BaseModel):

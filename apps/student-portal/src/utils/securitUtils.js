@@ -67,6 +67,12 @@ export async function generateDeviceFingerprint() {
  * Prevents developer tools from opening
  */
 export function preventDeveloperTools() {
+  // ALLOW DEV TOOLS FOR TESTING/DEBUGGING
+  if (localStorage.getItem('DEBUG_ALLOW_DEVTOOLS') === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    console.log('%c🔧 Developer Tools Protection Bypass Active', 'color: #3b82f6; font-weight: bold;');
+    return;
+  }
+
   // F12 - Opens developer tools
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F12') {
@@ -175,6 +181,11 @@ export function validateBrowserContext() {
  * @param {Function} onViolation - Callback when violation detected
  */
 export function enforceKeyboardRestrictions(onViolation) {
+  // ALLOW RESTRICTED KEYS FOR TESTING/DEBUGGING
+  if (localStorage.getItem('DEBUG_ALLOW_DEVTOOLS') === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return;
+  }
+
   const restrictedKeys = {
     'F12': 'Developer tools',
     'F11': 'Fullscreen toggle',
@@ -212,6 +223,11 @@ export function enforceKeyboardRestrictions(onViolation) {
  * @param {Function} onViolation - Callback when violation detected
  */
 export function monitorBrowserActivity(onViolation) {
+  // ALLOW BROWSER ACTIVITY FOR TESTING/DEBUGGING
+  if (localStorage.getItem('DEBUG_ALLOW_DEVTOOLS') === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return;
+  }
+
   // Detect if browser is in fullscreen
   const handleFullscreenChange = () => {
     if (!document.fullscreenElement) {

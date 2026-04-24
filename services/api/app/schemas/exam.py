@@ -5,6 +5,7 @@ class StartExamRequest(BaseModel):
     exam_code: str
     verification_code: str
     live_image_base64: str
+    live_id_image_base64: str | None = None
     device_fingerprint: str | None = None
 
 
@@ -68,6 +69,10 @@ class ExamReportOut(BaseModel):
     recommended_actions: list[str]
     topic_breakdown: list[TopicBreakdownOut]
     score_percent: float
+    evidence_summary: list[dict] = []
+    evidence_count: int = 0
+    credibility_score: float | None = None
+    client_proctor_metrics: dict | None = None
 
 
 class SubmitExamResponse(BaseModel):

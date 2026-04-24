@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
   --primary: #000;
   --bg: #f9fafb;
@@ -11,8 +13,6 @@
   --warning: #f59e0b;
   --danger: #ef4444;
 }
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 * {
   box-sizing: border-box;
@@ -323,7 +323,7 @@ svg {
   mask-image: radial-gradient(circle, black 65%, transparent 95%);
   -webkit-mask-image: radial-gradient(circle, black 65%, transparent 95%);
   filter: drop-shadow(0 0 100px rgba(79, 70, 229, 0.5));
-  animation: infra-rotate-slow 80s linear infinite, infra-float 15s ease-in-out infinite;
+  animation: none;
 }
 
 @keyframes infra-rotate-slow { from { transform: rotateY(0deg); } to { transform: rotateY(360deg); } }

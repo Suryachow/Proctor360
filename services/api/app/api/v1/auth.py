@@ -18,22 +18,14 @@ async def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    try:
-        # Use AI service to ensure registration image has exactly one face.
-        analysis = await analyze_frame(payload.live_image_base64, include_advanced=False)
-        face_count = int((analysis.get("metrics") or {}).get("face_count", 0))
-        if face_count != 1:
-            raise HTTPException(status_code=400, detail="Registration requires a clear live image with exactly one face")
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Unable to verify registration live image. Try again.") from exc
+    # ── FACE CAPTURE DISABLED BY USER REQUEST ──
+    # Analysis check removed to streamline registration.
 
     student = Student(
         email=normalized_email,
         password_hash=hash_password(payload.password),
         device_hash=payload.device_hash,
-        registered_face_image=payload.live_image_base64,
+        registered_face_image=payload.live_image_base64 or "",
     )
     db.add(student)
     db.commit()
@@ -46,8 +38,17 @@ async def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     normalized_email = payload.email.strip().lower()
     student = db.query(Student).filter(Student.email == normalized_email).first()
-    if not student or not verify_password(payload.password, student.password_hash):
+    
+    if not student:
+        import logging
+        logging.warning(f"Auth Failure: Student not found for {normalized_email}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+    if not verify_password(payload.password, student.password_hash):
+        import logging
+        logging.warning(f"Auth Failure: Password mismatch for {normalized_email}")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+        
     if student.email != "student@test.com" and student.device_hash != payload.device_hash:
         raise HTTPException(status_code=403, detail="Device mismatch")
 

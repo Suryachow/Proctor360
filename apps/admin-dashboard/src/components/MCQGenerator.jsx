@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../services/api";
 
-// ── Round-robin Groq key pool (mirrors exam_generator.html) ──────────────────
+// Keep the key pool external; do not commit live API keys.
 const GROQ_KEYS = [
-  "gsk_PLACEHOLDER_FOR_SECURITY_REASONS",
-];
+  ...(String(import.meta.env.VITE_GROQ_API_KEYS || "").split(",") || []),
+  import.meta.env.VITE_GROQ_API_KEY,
+]
+  .map((key) => String(key || "").trim())
+  .filter(Boolean);
 let keyIdx = 0;
 const getNextKey = () => {
+  if (!GROQ_KEYS.length) {
+    return "";
+  }
   const k = GROQ_KEYS[keyIdx];
   keyIdx = (keyIdx + 1) % GROQ_KEYS.length;
   return k;
@@ -142,6 +148,7 @@ function toBackendFormat(question, topic) {
     option_d: opts.D || "",
     correct_option: question.correct_answer || "A",
     topic: topic.toLowerCase(),
+    sub_topic: (question.sub_topic || "general").toLowerCase(),
   };
 }
 
@@ -230,6 +237,7 @@ export default function MCQGenerator({ onExamPublished }) {
   const [topics, setTopics] = useState("");
   const [qty, setQty] = useState(8);
   const [difficulty, setDifficulty] = useState("medium");
+  const [examType, setExamType] = useState("Technology (FAANG/LeetCode)");
   const [customTitle, setCustomTitle] = useState("");
   const [generating, setGenerating] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
@@ -241,6 +249,18 @@ export default function MCQGenerator({ onExamPublished }) {
   const [audience, setAudience] = useState("public");
   const [studentEmails, setStudentEmails] = useState("");
   const [examCode, setExamCode] = useState("");
+
+  const SYLLABUS_MAP = {
+    "Technology (FAANG/LeetCode)": "Data Structures, Algorithms, System Design, Time Complexity, OS Fundamentals",
+    "UPSC (Civil Services/IAS)": "Indian Polity, Ancient & Modern History, Geography, Economics, International Relations, CSAT",
+    "State Groups (Group 1/2/3)": "General Studies, Mental Ability, Disaster Management, Regional History, Current Affairs",
+    "Professional Certifications (AWS/GCP)": "Cloud Architecture, Security & Compliance, Compute Services, Storage Solutions, VPC Networking"
+  };
+
+  const autoFillSyllabus = () => {
+    setTopics(SYLLABUS_MAP[examType] || "");
+    showToast(`✓ Loaded official ${examType} blueprint!`);
+  };
   const loadingRef = useRef(null);
 
   const showToast = (msg, type = "success") => {
@@ -258,42 +278,64 @@ export default function MCQGenerator({ onExamPublished }) {
 
   const fetchGroqExamBatch = async (questionCount) => {
     const systemPrompt = buildSystemPrompt();
-    const userPrompt = `Generate ${questionCount} MCQ questions.\nTopics: ${topics}\nDifficulty: ${difficulty}\nNumber of questions: ${questionCount}${customTitle ? `\nExam title: ${customTitle}` : ""}\n\nReturn ONLY valid JSON, no markdown.`;
+    const userPrompt = `Generate ${questionCount} MCQ questions for the ${examType} competitive track.
+Topics: ${topics || "USE OFFICIAL STANDARD SYLLABUS FOR THIS EXAM TYPE"}
+Difficulty: ${difficulty}
+IMPORTANT: If topics are not provided, strictly follow the ${examType} official exam pattern and syllabus breakdown.
+Provide a granular "sub_topic" for each question.
+${customTitle ? `\nExam title: ${customTitle}` : ""}
+\n\nReturn ONLY valid JSON, no markdown.`;
 
-    const apiKey = getNextKey();
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
-    });
-
-    if (res.status === 429) {
-      throw new Error("Groq rate limit (429). Please wait and retry.");
-    }
-    if (!res.ok) {
-      throw new Error(`Groq API error: ${res.status}`);
+    if (!GROQ_KEYS.length) {
+      throw new Error("Add VITE_GROQ_API_KEY or VITE_GROQ_API_KEYS to continue.");
     }
 
-    const data = await res.json();
-    const raw = data?.choices?.[0]?.message?.content || "";
-    const clean = raw.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(clean);
+    let lastError = null;
+    for (let attempt = 0; attempt < GROQ_KEYS.length; attempt += 1) {
+      const apiKey = getNextKey();
+      try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+          }),
+        });
 
-    if (!Array.isArray(parsed?.questions)) {
-      throw new Error("AI returned invalid question format.");
+        if (res.status === 429) {
+          lastError = new Error("Groq rate limit (429). Trying next key.");
+          continue;
+        }
+        if (!res.ok) {
+          lastError = new Error(`Groq API error: ${res.status}. Trying next key.`);
+          continue;
+        }
+
+        const data = await res.json();
+        const raw = data?.choices?.[0]?.message?.content || "";
+        const clean = raw.replace(/```json|```/g, "").trim();
+        const parsed = JSON.parse(clean);
+
+        if (!Array.isArray(parsed?.questions)) {
+          lastError = new Error("AI returned invalid question format. Trying next key.");
+          continue;
+        }
+
+        return {
+          examTitle: String(parsed?.exam_title || customTitle || `${topics} Assessment`).trim(),
+          questions: parsed.questions,
+        };
+      } catch (err) {
+        lastError = err;
+      }
     }
 
-    return {
-      examTitle: String(parsed?.exam_title || customTitle || `${topics} Assessment`).trim(),
-      questions: parsed.questions,
-    };
+    throw lastError || new Error("Groq API error: all configured keys failed.");
   };
 
   const generateWithDiagramAutoRepair = async () => {
@@ -440,14 +482,37 @@ export default function MCQGenerator({ onExamPublished }) {
         </div>
 
         <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+          {/* Exam Type */}
+          <div className="field-group" style={{ gridColumn: "1 / -1" }}>
+            <label>Target Competitive Track</label>
+            <select 
+              value={examType} 
+              onChange={e => setExamType(e.target.value)}
+              style={{ width: "100%", padding: "16px", borderRadius: "14px", background: "#f9fafb", border: "1px solid var(--border)", fontInherit: "inherit" }}
+            >
+              <option>Technology (FAANG/LeetCode)</option>
+              <option>UPSC (Civil Services/IAS)</option>
+              <option>State Groups (Group 1/2/3)</option>
+              <option>Professional Certifications (AWS/GCP)</option>
+            </select>
+          </div>
+
           {/* Topics */}
           <div className="field-group" style={{ gridColumn: "1 / -1" }}>
-            <label>Topics <span style={{ opacity: 0.45 }}>(comma-separated)</span></label>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+               <label>Topics <span style={{ opacity: 0.45 }}>(comma-separated)</span></label>
+               <button 
+                 type="button" 
+                 onClick={autoFillSyllabus} 
+                 style={{ border: "none", background: "none", color: "var(--primary)", fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>
+                 💡 AI: Use Official Syllabus Blueprint
+               </button>
+            </div>
             <input
               id="mcq-topics"
               value={topics}
               onChange={e => setTopics(e.target.value)}
-              placeholder="e.g. Operating Systems, Process Scheduling, Memory Management"
+              placeholder={`e.g. ${SYLLABUS_MAP[examType]?.split(",")[0]}...`}
             />
           </div>
 

@@ -28,7 +28,7 @@ def get_current_student(
     if role != "student":
         raise HTTPException(status_code=403, detail="Student role required")
 
-    subject = payload.get("sub")
+    subject = str(payload.get("sub") or "").strip().lower()
     student = db.query(Student).filter(Student.email == subject).first()
     if not student:
         raise HTTPException(status_code=401, detail="Student not found")

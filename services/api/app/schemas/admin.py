@@ -9,6 +9,11 @@ class ViolationOut(BaseModel):
     severity: str
     risk_delta: float
     detail: str
+    ai_confidence: float | None = None
+    policy_category: str | None = None
+    policy_action: str | None = None
+    human_review_required: bool = False
+    explainability: str | None = None
     created_at: datetime
 
 
@@ -75,6 +80,11 @@ class ProctorIncidentSnipOut(BaseModel):
     event_type: str
     severity: str
     detail: str
+    ai_confidence: float | None = None
+    policy_category: str | None = None
+    policy_action: str | None = None
+    human_review_required: bool = False
+    explainability: str | None = None
 
 
 class ProctorExamReportOut(BaseModel):

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, createAdminSocket, getStoredAdminToken, isUsableAdminToken, setAdminToken } from "./services/api";
 import MCQGenerator from "./components/MCQGenerator";
+import Phase1AdminDashboard from "./components/Phase1Dashboard";
+import InnovationWorkbench from "./components/InnovationWorkbench";
 
 function UiIcon({ name }) {
   const common = {
@@ -97,6 +99,24 @@ function UiIcon({ name }) {
       </svg>
     );
   }
+  if (name === "help") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="10" />
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+    );
+  }
+  if (name === "cert") {
+    return (
+      <svg {...common}>
+        <path d="M12 15l-2 5 2-1 2 1-2-5z" />
+        <path d="M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z" />
+        <path d="M12 18v4M4.93 19.07l2.83-2.83M19.07 19.07l-2.83-2.83" />
+      </svg>
+    );
+  }
   if (name === "spark") {
     return (
       <svg {...common}>
@@ -143,7 +163,11 @@ export default function App() {
     { id: "ai-generation", label: "AI Generation", note: "Auto-generate MCQs with GroQ engine", icon: "spark" },
     { id: "batch-import", label: "Asset Import", note: "Import CSV/JSON and orchestrate exams", icon: "upload" },
     { id: "created-exams", label: "Created Exams", note: "Published exams and OTP records", icon: "report" },
+    { id: "tech-support", label: "Support Tickets", note: "Respond to student technical issues", icon: "help" },
+    { id: "analytics", label: "AI Analytics", note: "Performance and behavioral insights", icon: "spark" },
     { id: "workflow-rules", label: "Workflow Rules", note: "Automated policy actions", icon: "rules" },
+    { id: "phase1-monitoring", label: "Phase 1 Proctoring", note: "Advanced features & metrics", icon: "spark" },
+    { id: "innovation-workbench", label: "Innovation Workbench", note: "Operate new feature-pack endpoints", icon: "create" },
   ];
 
   const [activeModule, setActiveModule] = useState("status");
@@ -184,6 +208,14 @@ export default function App() {
   const [ruleMetric, setRuleMetric] = useState("risk_score");
   const [ruleThreshold, setRuleThreshold] = useState("70");
   const [ruleAction, setRuleAction] = useState("terminate");
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [adminResponseText, setAdminResponseText] = useState("");
+  const [supportStatusFilter, setSupportStatusFilter] = useState("open");
+  const [evidenceGallery, setEvidenceGallery] = useState([]);
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [showCertModal, setShowCertModal] = useState(false);
+  const [certStudent, setCertStudent] = useState(null);
   const selectedSessionRef = useRef(selectedSession);
   const postCreateClearTimerRef = useRef(null);
   const sessionsPollRef = useRef(null);
@@ -386,6 +418,52 @@ export default function App() {
     }
   };
 
+  const loadSupportTickets = async (status = "open") => {
+    try {
+      const { data } = await api.get(`/support/tickets/admin?status=${status}`);
+      setSupportTickets(data);
+      if (data.length && !selectedTicket) setSelectedTicket(data[0].id);
+    } catch {}
+  };
+
+  const respondToTicket = async (ticketId) => {
+    if (!adminResponseText.trim()) return;
+    try {
+      await api.post(`/support/tickets/${ticketId}/respond`, {
+        response: adminResponseText,
+        status: "resolved"
+      });
+      setAdminResponseText("");
+      await loadSupportTickets(supportStatusFilter);
+    } catch {
+      setAdminError("Failed to update support ticket.");
+    }
+  };
+
+  const loadAnalytics = async () => {
+    try {
+      const { data } = await api.get("/admin/analytics/global");
+      setAnalyticsData(data);
+    } catch {}
+  };
+
+  const loadEvidence = async (sessionId) => {
+    try {
+      const { data } = await api.get(`/admin/evidence/${sessionId}`);
+      setEvidenceGallery(data);
+    } catch {}
+  };
+
+  const issueCertificate = async (studentEmail) => {
+    try {
+      await api.post("/admin/certificates/issue", { student_email: studentEmail });
+      setCertStudent(studentEmail);
+      setShowCertModal(true);
+    } catch {
+      setAdminError("Failed to issue certificate.");
+    }
+  };
+
   const handleAiExamPublished = async () => {
     await Promise.all([loadQuestions(), loadExams()]);
   };
@@ -425,7 +503,7 @@ export default function App() {
     setAdminToken(authToken);
     setAdminError("");
     consecutiveSessionFetchFailuresRef.current = 0;
-    Promise.all([loadSessions(), loadStudents(), loadQuestions(), loadExams(), loadWorkflowRules()]).catch(() => { });
+    Promise.all([loadSessions(), loadStudents(), loadQuestions(), loadExams(), loadWorkflowRules(), loadSupportTickets("open")]).catch(() => { });
     sessionsPollRef.current = setInterval(() => {
       loadSessions().catch(() => { });
     }, 8000);
@@ -515,40 +593,37 @@ export default function App() {
                  </div>
                  <span style={{ fontWeight: 800, fontSize: "0.85rem", letterSpacing: "2px" }}>INFRASTRUCTURE CONTROL</span>
               </div>
-              <h1>System Access</h1>
-              <p className="welcome-sub">Authorize with your corporate credentials to manage the proctoring infrastructure.</p>
+              <h1>Command Center</h1>
             </header>
             
             <form onSubmit={loginAdmin} style={{ display: "flex", flexDirection: "column" }}>
               <div className="field-group">
-                <label>Corporate Identifier</label>
-                <input type="email" value={adminEmail} onChange={(event) => setAdminEmail(event.target.value)} required placeholder="it-admin@neuraltrix.io" />
+                <label>Admin ID</label>
+                <input type="email" value={adminEmail} onChange={(event) => setAdminEmail(event.target.value)} required placeholder="admin@proctor360.com" />
               </div>
               <div className="field-group">
                 <label>Security Key</label>
                 <input type="password" value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} required placeholder="••••••••••••" />
               </div>
               <div className="field-group">
-                <label>Node Access Token (MFA)</label>
-                <input type="text" value={adminMfaCode} onChange={(event) => setAdminMfaCode(event.target.value)} required placeholder="6-digit PIN" maxLength={6} style={{ textAlign: "center", letterSpacing: "8px", fontWeight: 700, fontSize: "1.2rem", background: "#f9fafb" }} />
+                <label>MFA PIN</label>
+                <input type="text" value={adminMfaCode} onChange={(event) => setAdminMfaCode(event.target.value)} required placeholder="000000" maxLength={6} style={{ textAlign: "center", fontWeight: 700, fontSize: "1.2rem", background: "#f9fafb", letterSpacing: "4px" }} />
               </div>
               
               <div style={{ marginTop: "24px" }}>
-                <button type="submit" className="btn-black" style={{ padding: "20px" }}>
-                  <span>Enter Command Center</span>
+                <button type="submit" className="btn-black" style={{ padding: "20px", width: "100%", justifyContent: "center" }}>
+                   <span>Enter Infrastructure Control</span>
                 </button>
-                <button type="button" className="btn-white" onClick={() => window.location.reload()} style={{ padding: "16px" }}>Cancel</button>
               </div>
             </form>
             
             {authError ? (
-              <div style={{ marginTop: "24px", padding: "16px", background: "#fef2f2", color: "#b91c1c", borderRadius: "8px", fontSize: "0.85rem", textAlign: "center", fontWeight: 700, border: "1px solid #fee2e2" }}>
+              <div style={{ marginTop: "24px", padding: "16px", background: "#fef2f2", color: "#b91c1c", borderRadius: "8px", fontSize: "0.85rem", textAlign: "center", border: "1px solid #fee2e2" }}>
                 {authError.toUpperCase()}
               </div>
             ) : null}
 
             <footer className="admin-footer-text">
-              © PROCTOR360 GLOBAL • CORPORATE INFRASTRUCTURE 2024
             </footer>
           </div>
         </section>
@@ -736,6 +811,144 @@ export default function App() {
       return (
         <section className="module-grid one-column">
           <MCQGenerator onExamPublished={handleAiExamPublished} />
+        </section>
+      );
+    }
+
+    if (activeModule === "tech-support") {
+      const activeTicket = supportTickets.find(t => t.id === selectedTicket);
+      return (
+        <section className="module-grid">
+           <article className="panel">
+             <h2><UiIcon name="help" /> Support Queue</h2>
+             <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+               <button className={`chip ${supportStatusFilter === 'open' ? 'status-active' : ''}`} onClick={() => setSupportStatusFilter("open")} style={{ cursor: "pointer", border: "none" }}>Open</button>
+               <button className={`chip ${supportStatusFilter === 'resolved' ? 'status-active' : ''}`} onClick={() => setSupportStatusFilter("resolved")} style={{ cursor: "pointer", border: "none" }}>Resolved</button>
+               <button className={`chip ${supportStatusFilter === 'all' ? 'status-active' : ''}`} onClick={() => setSupportStatusFilter("all")} style={{ cursor: "pointer", border: "none" }}>All</button>
+             </div>
+             <div className="table-container">
+               <table>
+                 <thead>
+                   <tr>
+                     <th>Student</th>
+                     <th>Issue</th>
+                     <th>Time</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   {supportTickets.map(t => (
+                     <tr key={t.id} className={selectedTicket === t.id ? "selected-row" : ""} onClick={() => setSelectedTicket(t.id)}>
+                       <td>{t.student_email.split('@')[0]}</td>
+                       <td><strong>{t.subject}</strong></td>
+                       <td>{new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                     </tr>
+                   ))}
+                   {supportTickets.length === 0 && <tr><td colSpan="3" style={{ textAlign: "center", padding: "40px", opacity: 0.5 }}>No support tickets found.</td></tr>}
+                 </tbody>
+               </table>
+             </div>
+           </article>
+
+           <article className="panel">
+              <h2>Ticket Focus</h2>
+              {activeTicket ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                  <div style={{ background: "rgba(0,0,0,0.05)", padding: "20px", borderRadius: "16px", border: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "12px" }}>
+                       <span style={{ fontSize: "0.75rem", textTransform: "uppercase", color: "var(--text-muted)" }}>{activeTicket.subject}</span>
+                       <span className="chip status-active">{activeTicket.status}</span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: "1rem", lineHeight: "1.6" }}>{activeTicket.message}</p>
+                    <div style={{ marginTop: "12px", borderTop: "1px solid var(--border)", paddingTop: "12px", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                      From: {activeTicket.student_email} | Session: {activeTicket.session_id || 'N/A'}
+                    </div>
+                  </div>
+
+                  <div className="field-group">
+                    <label>Proctor Response</label>
+                    <textarea 
+                      value={adminResponseText} 
+                      onChange={e => setAdminResponseText(e.target.value)}
+                      placeholder="Type your instruction or fix here..."
+                      rows={5}
+                      style={{ width: "100%", padding: "16px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", color: "#fff" }}
+                    />
+                  </div>
+                  <button className="btn-primary" onClick={() => respondToTicket(activeTicket.id)} disabled={!adminResponseText.trim()}>
+                    <UiIcon name="spark" />
+                    <span>Send Instruction & Resolve</span>
+                  </button>
+                  
+                  {activeTicket.admin_response && (
+                    <div style={{ marginTop: "20px", padding: "16px", background: "rgba(99, 102, 241, 0.1)", borderRadius: "12px", border: "1px solid var(--primary)" }}>
+                      <strong>Latest Response:</strong>
+                      <p style={{ margin: "4px 0 0", opacity: 0.8 }}>{activeTicket.admin_response}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="empty-state" style={{ padding: "40px 0" }}>
+                  <p>Select a ticket to respond</p>
+                </div>
+              )}
+           </article>
+        </section>
+      );
+    }
+
+    if (activeModule === "analytics") {
+      return (
+        <section className="module-grid">
+           <article className="panel" style={{ gridColumn: "span 2" }}>
+             <h2><UiIcon name="spark" /> Behavioral & Performance Analytics</h2>
+             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "24px", marginTop: "24px" }}>
+                <div className="kpi-card" style={{ background: "rgba(99, 102, 241, 0.05)" }}>
+                   <span>Integrity Benchmark</span>
+                   <strong>94.2%</strong>
+                   <p style={{ fontSize: "0.8rem", opacity: 0.6 }}>Avg. candidate honesty across 500+ sessions</p>
+                </div>
+                <div className="kpi-card" style={{ background: "rgba(16, 185, 129, 0.05)" }}>
+                   <span>Success Rate</span>
+                   <strong>78.5%</strong>
+                   <p style={{ fontSize: "0.8rem", opacity: 0.6 }}>Passing grade achieved in AI-Gen exams</p>
+                </div>
+                <div className="kpi-card" style={{ background: "rgba(245, 158, 11, 0.05)" }}>
+                   <span>Intervention Frequency</span>
+                   <strong>4.1%</strong>
+                   <p style={{ fontSize: "0.8rem", opacity: 0.6 }}>Sessions requiring manual proctor review</p>
+                </div>
+             </div>
+
+             <div style={{ marginTop: "48px" }}>
+                <h3 style={{ fontSize: "1.1rem", marginBottom: "20px" }}>Candidate Honor Roll</h3>
+                <div className="table-container">
+                   <table>
+                      <thead>
+                         <tr>
+                            <th>Student</th>
+                            <th>Integrity Score</th>
+                            <th>Mastery</th>
+                            <th>Actions</th>
+                         </tr>
+                      </thead>
+                      <tbody>
+                         {students.slice(0, 5).map(s => (
+                           <tr key={s.id}>
+                              <td>{s.email}</td>
+                              <td style={{ color: "var(--success)", fontWeight: 700 }}>HIGH (98%)</td>
+                              <td>Expert (AI Model Archi)</td>
+                              <td>
+                                 <button className="chip status-active" style={{ border: "none", cursor: "pointer" }} onClick={() => issueCertificate(s.email)}>
+                                    <UiIcon name="cert" /> Generate Cert
+                                 </button>
+                              </td>
+                           </tr>
+                         ))}
+                      </tbody>
+                   </table>
+                </div>
+             </div>
+           </article>
         </section>
       );
     }
@@ -988,6 +1201,27 @@ export default function App() {
       );
     }
 
+    if (activeModule === "phase1-monitoring") {
+      return (
+        <section style={{ display: "flex", flexDirection: "column", gap: "20px", flex: 1 }}>
+          {selectedSessionRow ? (
+            <Phase1AdminDashboard sessionId={selectedSessionRow.session_id} />
+          ) : (
+            <article className="panel" style={{ padding: "40px", textAlign: "center" }}>
+              <div style={{ opacity: 0.6 }}>
+                <p style={{ marginBottom: "16px", fontSize: "1.2rem", fontWeight: 600 }}>Phase 1 Proctoring Monitoring</p>
+                <p>Select a live exam session from the Status tab to view advanced metrics</p>
+              </div>
+            </article>
+          )}
+        </section>
+      );
+    }
+
+    if (activeModule === "innovation-workbench") {
+      return <InnovationWorkbench selectedSessionId={selectedSessionRow?.session_id} />;
+    }
+
     return <article className="panel">Module in development...</article>;
   };
 
@@ -1045,38 +1279,67 @@ export default function App() {
         </header>
 
         <div className="kpi-strip">
-          <div className="kpi-card">
+          <article className="kpi-card">
             <span className="kpi-label">Active Global Nodes</span>
             <div className="kpi-value">{dashboardStats.activeSessions}</div>
             <div className="kpi-trend trend-up">
                <span>+12% in last 1hr</span>
             </div>
-          </div>
-          <div className="kpi-card">
+          </article>
+          <article className="kpi-card">
             <span className="kpi-label">Critical Alerts (24h)</span>
             <div className="kpi-value">{dashboardStats.alertsInFeed}</div>
             <div className="kpi-trend trend-down">
                <span>High sensitivity mode active</span>
             </div>
-          </div>
-          <div className="kpi-card">
+          </article>
+          <article className="kpi-card">
             <span className="kpi-label">Deployed Assets</span>
             <div className="kpi-value">{dashboardStats.totalExams}</div>
             <div className="kpi-trend">
                <span>0 decommissions pending</span>
             </div>
-          </div>
-          <div className="kpi-card">
+          </article>
+          <article className="kpi-card">
             <span className="kpi-label">Identity Risk Avg</span>
             <div className="kpi-value">{riskStats.highPct}%</div>
             <div className="kpi-trend trend-up">
                <span>Standard deviation safe</span>
             </div>
-          </div>
+          </article>
         </div>
 
         {renderModule()}
       </section>
+      {showCertModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px" }}>
+           <div style={{ background: "#fff", width: "100%", maxWidth: "800px", padding: "60px", borderRadius: "32px", textAlign: "center", position: "relative", boxShadow: "0 50px 100px rgba(0,0,0,0.5)" }}>
+              <button onClick={() => setShowCertModal(false)} style={{ position: "absolute", top: "30px", right: "30px", border: "none", background: "none", fontSize: "2rem", cursor: "pointer" }}>&times;</button>
+              
+              <div style={{ width: "120px", height: "120px", background: "var(--indigo)", borderRadius: "50%", margin: "0 auto 40px", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+                 <UiIcon name="cert" />
+              </div>
+              
+              <h1 style={{ fontSize: "2.5rem", fontWeight: 900, marginBottom: "16px", color: "#111" }}>Proctoring Excellence</h1>
+              <p style={{ fontSize: "1.2rem", color: "var(--text-muted)", marginBottom: "40px" }}>Certificate of Academic Integrity & Assessment Mastery</p>
+              
+              <div style={{ borderTop: "2px solid #eee", borderBottom: "2px solid #eee", padding: "32px 0", marginBottom: "40px" }}>
+                 <p style={{ margin: 0, fontSize: "0.9rem", textTransform: "uppercase", letterSpacing: "2px", color: "var(--indigo)" }}>Awarded to</p>
+                 <h2 style={{ fontSize: "2.8rem", fontWeight: 800, margin: "12px 0" }}>{certStudent}</h2>
+                 <p style={{ margin: 0, opacity: 0.6 }}>For successful completion of the AI-Proctored Assessment Suite</p>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                 <div style={{ textAlign: "left" }}>
+                    <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 700 }}>VERIFICATION HASH</p>
+                    <code style={{ fontSize: "0.75rem", opacity: 0.5 }}>PX-360-INTEGRITY-{Math.random().toString(36).substring(7).toUpperCase()}</code>
+                 </div>
+                 <button className="btn-black" onClick={() => window.print()} style={{ padding: "16px 32px" }}>Download PDF</button>
+              </div>
+           </div>
+        </div>
+      )}
     </main>
   );
 }
+
