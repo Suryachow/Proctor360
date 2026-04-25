@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     groq_api_keys: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     cors_allow_origins: str = "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174"
-    trusted_hosts: str = "localhost,127.0.0.1,0.0.0.0,api"
-    enforce_https_headers: bool = True
+    trusted_hosts: str = "localhost,127.0.0.1,0.0.0.0,13.204.119.15"
+    enforce_https_headers: bool = False
     rate_limit_general_per_minute: int = 180
     rate_limit_auth_per_minute: int = 30
     rate_limit_proctor_per_minute: int = 600

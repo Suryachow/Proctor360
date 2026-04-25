@@ -24,6 +24,19 @@ else
     PYTHON_CMD="python3"
 fi
 
+# Setup Virtual Environment if it doesn't exist
+if [ ! -d "$ROOT/venv" ]; then
+    echo -e "${BLUE}Setting up Python virtual environment...${NC}"
+    $PYTHON_CMD -m venv "$ROOT/venv"
+fi
+
+# Use the virtual environment's python
+PYTHON_CMD="$ROOT/venv/bin/python"
+
+# Install requirements
+echo -e "${BLUE}Installing Python dependencies...${NC}"
+$PYTHON_CMD -m pip install -r "$ROOT/requirements.txt" -q
+
 # 1. API Server (FastAPI) on port 8000
 echo -e "${BLUE}[1/4] Starting API Server on port 8000...${NC}"
 cd "$ROOT/services/api" && $PYTHON_CMD -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
@@ -50,10 +63,10 @@ ADMIN_PID=$!
 echo -e "\n${GREEN}======================================================${NC}"
 echo -e "  All services launched in background!"
 echo -e "${GREEN}======================================================${NC}"
-echo -e "  API Server:        http://localhost:8000"
-echo -e "  AI Engine:         http://localhost:8100"
-echo -e "  Student Portal:    http://localhost:5173"
-echo -e "  Admin Dashboard:   http://localhost:5174"
+echo -e "  API Server:        http://13.204.119.15:8000"
+echo -e "  AI Engine:         http://13.204.119.15:8100"
+echo -e "  Student Portal:    http://13.204.119.15:5173"
+echo -e "  Admin Dashboard:   http://13.204.119.15:5174"
 echo -e "\n  ${YELLOW}Press Ctrl+C to stop all services...${NC}"
 
 # Cleanup function to kill all background processes on exit

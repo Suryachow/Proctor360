@@ -77,6 +77,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
+        "http://13.204.119.15:5173",
+        "http://13.204.119.15:5174",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -92,6 +94,7 @@ async def global_cors_exception_handler(request: Request, exc: Exception):
     if origin in [
         "http://localhost:5173", "http://localhost:5174",
         "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174",
+        "http://13.204.119.15:5173", "http://13.204.119.15:5174",
     ]:
         headers["access-control-allow-origin"] = origin
         headers["access-control-allow-credentials"] = "true"
