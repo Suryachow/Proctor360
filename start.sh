@@ -35,29 +35,30 @@ PYTHON_CMD="$ROOT/venv/bin/python"
 
 # Install requirements
 echo -e "${BLUE}Installing Python dependencies...${NC}"
-$PYTHON_CMD -m pip install -r "$ROOT/requirements.txt" -q
+source "$ROOT/venv/bin/activate"
+pip install -r "$ROOT/requirements.txt"
 
 # 1. API Server (FastAPI) on port 8000
 echo -e "${BLUE}[1/4] Starting API Server on port 8000...${NC}"
-cd "$ROOT/services/api" && $PYTHON_CMD -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
+cd "$ROOT/services/api" && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > "$ROOT/api_server.log" 2>&1 &
 API_PID=$!
 sleep 2
 
 # 2. AI Engine on port 8100
 echo -e "${BLUE}[2/4] Starting AI Engine on port 8100...${NC}"
-cd "$ROOT/services/ai-engine" && $PYTHON_CMD -m uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload &
+cd "$ROOT/services/ai-engine" && uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload > "$ROOT/ai_engine.log" 2>&1 &
 AI_PID=$!
 sleep 2
 
 # 3. Student Portal (Vite) on port 5173
 echo -e "${BLUE}[3/4] Starting Student Portal on port 5173...${NC}"
-cd "$ROOT/apps/student-portal" && npm run dev &
+cd "$ROOT/apps/student-portal" && npm run dev > "$ROOT/student_portal.log" 2>&1 &
 STUDENT_PID=$!
 sleep 2
 
 # 4. Admin Dashboard (Vite) on port 5174
 echo -e "${BLUE}[4/4] Starting Admin Dashboard on port 5174...${NC}"
-cd "$ROOT/apps/admin-dashboard" && npm run dev &
+cd "$ROOT/apps/admin-dashboard" && npm run dev > "$ROOT/admin_dashboard.log" 2>&1 &
 ADMIN_PID=$!
 
 echo -e "\n${GREEN}======================================================${NC}"
@@ -67,6 +68,9 @@ echo -e "  API Server:        http://13.204.119.15:8000"
 echo -e "  AI Engine:         http://13.204.119.15:8100"
 echo -e "  Student Portal:    http://13.204.119.15:5173"
 echo -e "  Admin Dashboard:   http://13.204.119.15:5174"
+echo -e "\n${BLUE}All output is now being saved to log files!${NC}"
+echo -e "To view API errors:  ${YELLOW}cat api_server.log${NC}"
+echo -e "To view Frontend:    ${YELLOW}cat admin_dashboard.log${NC}"
 echo -e "\n  ${YELLOW}Press Ctrl+C to stop all services...${NC}"
 
 # Cleanup function to kill all background processes on exit
