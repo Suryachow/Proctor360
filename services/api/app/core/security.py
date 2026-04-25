@@ -5,30 +5,25 @@ import struct
 import time
 from datetime import datetime, timedelta, timezone
 from jose import jwt
-from passlib.context import CryptContext
-
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+import bcrypt
 
 def hash_password(password: str) -> str:
-    # Bcrypt has a 72-byte limit
-    print("[DEBUG] Password length:", len(password.encode()))
-    print("[DEBUG] Password value:", password)
-    if len(password.encode()) > 72:
-        raise ValueError("Password too long (max 72 bytes)")
-    return pwd_context.hash(password)
-
+    # Bcrypt has a 72-byte limit, and passlib is broken with bcrypt>=4.0
+    pwd_bytes = password.encode('utf-8')
+    if len(pwd_bytes) > 72:
+        pwd_bytes = pwd_bytes[:72]
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed.decode('utf-8')
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    # Bcrypt has a 72-byte limit
-    print("[DEBUG] Password length (verify):", len(password.encode()))
-    print("[DEBUG] Password value (verify):", password)
-    if len(password.encode()) > 72:
-        print("[DEBUG] Password too long for bcrypt verify (max 72 bytes)")
-        return False
-    return pwd_context.verify(password, hashed_password)
+    pwd_bytes = password.encode('utf-8')
+    if len(pwd_bytes) > 72:
+        pwd_bytes = pwd_bytes[:72]
+    return bcrypt.checkpw(pwd_bytes, hashed_password.encode('utf-8'))
 
 
 def create_access_token(subject: str, role: str = "student") -> str:
