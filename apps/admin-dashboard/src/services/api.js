@@ -1,7 +1,7 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || "ws://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://13.204.119.15:8000";
+const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || "ws://13.204.119.15:8000";
 const ADMIN_TOKEN_KEY = "proctor_admin_token";
 
 export const api = axios.create({
